@@ -77,3 +77,6 @@ dmypy.json
 .gemini/
 tmp/
 *.log
+
+# Dev tools
+check_font.py

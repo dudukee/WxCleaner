@@ -114,7 +114,7 @@ def find_duplicates(scan_path, progress_callback=None):
 # UI 逻辑
 # ==========================================
 
-class WxCleanApp:
+class WxCleanerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("微信重复文件清理工具")
@@ -518,5 +518,5 @@ class WxCleanApp:
 
 if __name__ == "__main__":
     root = ttk.Window(themename="cosmo") 
-    app = WxCleanApp(root)
+    app = WxCleanerApp(root)
     root.mainloop()

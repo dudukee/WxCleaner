@@ -8,10 +8,10 @@ import time
 from send2trash import send2trash # 恢复使用 send2trash
 from scanner import find_duplicates
 
-class WxCleanApp:
+class WxCleanerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("微信重复文件清理工具")
+        self.root.title("WxCleaner - 微信重复文件清理工具")
         self.root.geometry("1100x800")
         
         # 设置窗口图标 (运行时)

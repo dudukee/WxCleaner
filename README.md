@@ -1,6 +1,6 @@
-# WxClean - 微信重复文件清理工具
+# WxCleaner - 微信重复文件清理工具
 
-WxClean 是一款专为清理微信接收文件而设计的轻量级桌面工具。它能够高效扫描指定目录，通过智能算法识别重复文件，并提供可视化的清理界面，帮助用户释放磁盘空间。
+WxCleaner 是一款专为清理微信接收文件而设计的轻量级桌面工具。它能够高效扫描指定目录，通过智能算法识别重复文件，并提供可视化的清理界面，帮助用户释放磁盘空间。
 
 ## ✨ 核心功能
 
@@ -23,15 +23,15 @@ WxClean 是一款专为清理微信接收文件而设计的轻量级桌面工具
 ## 🚀 快速开始
 
 ### 方式一：运行可执行文件 (Windows)
-在 [Releases](https://github.com/yourusername/WxClean/releases) 页面下载最新的 `WxClean.exe`，双击即可直接运行，无需安装 Python 环境。
+在 [Releases](https://github.com/yourusername/WxCleaner/releases) 页面下载最新的 `WxCleaner.exe`，双击即可直接运行，无需安装 Python 环境。
 
 ### 方式二：源码运行
 
 1.  **环境要求**: 确保已安装 Python 3.8 或更高版本。
 2.  **克隆仓库**:
     ```bash
-    git clone https://github.com/yourusername/WxClean.git
-    cd WxClean
+    git clone https://github.com/yourusername/WxCleaner.git
+    cd WxCleaner
     ```
 3.  **安装依赖**:
     ```bash
@@ -57,7 +57,7 @@ WxClean 是一款专为清理微信接收文件而设计的轻量级桌面工具
 如果您想自行打包为 `.exe` 文件：
 
 ```bash
-pyinstaller WxClean.spec
+pyinstaller WxCleaner.spec
 ```
 打包完成后，可执行文件将位于 `dist/` 目录下。
 
