@@ -81,9 +81,10 @@ def find_duplicates(scan_path, progress_callback=None):
             
             current_hash_processed += 1
             if progress_callback and current_hash_processed % 10 == 0:
-                 # 映射到 50% - 75% 区间
-                 p = 0.5 * total_files + 0.25 * total_files * (current_hash_processed / potential_duplicates_count)
-                 progress_callback(p, total_files, "正在计算头部哈希...")
+                # 映射到 50% - 75% 区间
+                if potential_duplicates_count > 0:
+                    p = 0.5 * total_files + 0.25 * total_files * (current_hash_processed / potential_duplicates_count)
+                    progress_callback(p, total_files, "正在计算头部哈希...")
 
     # 3. 对头部哈希相同的文件，计算全量哈希 (Full Hash)
     potential_full_hash_count = sum(len(paths) for paths in partial_hash_groups.values() if len(paths) > 1)
@@ -101,8 +102,9 @@ def find_duplicates(scan_path, progress_callback=None):
             current_full_hash_processed += 1
             if progress_callback:
                 # 映射到 75% - 100% 区间
-                p = 0.75 * total_files + 0.25 * total_files * (current_full_hash_processed / potential_full_hash_count)
-                progress_callback(p, total_files, "正在进行全量校验...")
+                if potential_full_hash_count > 0:
+                    p = 0.75 * total_files + 0.25 * total_files * (current_full_hash_processed / potential_full_hash_count)
+                    progress_callback(p, total_files, "正在进行全量校验...")
 
     # 4. 过滤掉没有重复的文件
     return {h: paths for h, paths in duplicates.items() if len(paths) > 1}

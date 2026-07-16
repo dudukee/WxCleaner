@@ -4,39 +4,85 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import threading
 import os
+import sys
 import time
-from send2trash import send2trash # 恢复使用 send2trash
+import subprocess
+import concurrent.futures
+from send2trash import send2trash
 from scanner import find_duplicates
+
+
+def resource_path(relative_path):
+    """获取资源路径，兼容源码运行和 PyInstaller 打包运行。"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
+def get_ui_fonts():
+    if sys.platform == "darwin":
+        return ("PingFang SC", 10), ("PingFang SC", 10, "bold")
+    if sys.platform.startswith("win"):
+        return ("Microsoft YaHei", 10), ("Microsoft YaHei", 10, "bold")
+    return ("Noto Sans CJK SC", 10), ("Noto Sans CJK SC", 10, "bold")
+
+
+def get_default_wechat_path():
+    home = os.path.expanduser("~")
+    candidates = []
+
+    if sys.platform == "darwin":
+        candidates = [
+            os.path.join(home, "Library", "Containers", "com.tencent.xinWeChat", "Data", "Documents"),
+            os.path.join(home, "Library", "Containers", "com.tencent.xinWeChat", "Data", "Library", "Application Support", "com.tencent.xinWeChat"),
+            os.path.join(home, "Library", "Application Support", "com.tencent.xinWeChat"),
+            os.path.join(home, "Documents", "WeChat Files"),
+        ]
+    elif sys.platform.startswith("win"):
+        candidates = [
+            os.path.join(home, "Documents", "WeChat Files"),
+            os.path.join(os.environ.get("USERPROFILE", home), "Documents", "WeChat Files"),
+        ]
+    else:
+        candidates = [os.path.join(home, "Documents", "WeChat Files")]
+
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return ""
+
+
+def open_file_location_in_system(path):
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-R", path], check=True)
+    elif sys.platform.startswith("win"):
+        subprocess.run(["explorer", f"/select,{os.path.normpath(path)}"], check=True)
+    else:
+        subprocess.run(["xdg-open", os.path.dirname(path)], check=True)
 
 class WxCleanerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("WxCleaner - 微信重复文件清理工具")
+        self.root.title("微信重复文件清理工具")
         self.root.geometry("1100x800")
-        
-        # 设置窗口图标 (运行时)
+
+        self.ui_font_normal, self.ui_font_bold = get_ui_fonts()
+
+        # Windows 使用 ico；macOS 打包时应通过应用包 icns 设置 Dock 图标。
         try:
-            icon_path = "icon.ico" # 使用生成的 icon.ico
-            if os.path.exists(icon_path):
+            icon_path = resource_path("icon.ico")
+            if sys.platform.startswith("win") and os.path.exists(icon_path):
                 self.root.iconbitmap(icon_path)
         except Exception as e:
             print(f"图标加载失败: {e}")
-        
-        # 设置全局字体大小
-        self.root = root
-        self.root.title("微信重复文件清理工具")
-        self.root.geometry("1100x800")
-        
-        # 设置全局字体大小
-        default_font = ("Microsoft YaHei", 10)
-        self.root.option_add("*Font", default_font)
-        
-        # 针对特定的 Treeview 设置更大字体
+
+        self.root.option_add("*Font", self.ui_font_normal)
+
         style = ttk.Style()
-        style.configure("Treeview", font=("Microsoft YaHei", 10), rowheight=30)
-        style.configure("Treeview.Heading", font=("Microsoft YaHei", 11, "bold"))
+        style.configure("Treeview", font=self.ui_font_normal, rowheight=30)
+        style.configure("Treeview.Heading", font=self.ui_font_bold)
         
-        self.scan_path = tk.StringVar()
+        self.scan_path = tk.StringVar(value=get_default_wechat_path())
         self.duplicates = {} # {hash: [paths]}
         
         self.setup_ui()
@@ -50,8 +96,8 @@ class WxCleanerApp:
         top_frame = ttk.Labelframe(main_frame, text="扫描设置", padding="10")
         top_frame.pack(fill=X, pady=(0, 10))
         
-        ttk.Label(top_frame, text="扫描路径:", font=("Microsoft YaHei", 10, "bold")).pack(side=LEFT)
-        self.entry = ttk.Entry(top_frame, textvariable=self.scan_path, font=("Microsoft YaHei", 10))
+        ttk.Label(top_frame, text="扫描路径:", font=self.ui_font_bold).pack(side=LEFT)
+        self.entry = ttk.Entry(top_frame, textvariable=self.scan_path, font=self.ui_font_normal)
         self.entry.pack(side=LEFT, fill=X, expand=YES, padx=10)
         
         ttk.Button(top_frame, text="浏览", command=self.browse_folder, bootstyle="outline-primary").pack(side=LEFT, padx=5)
@@ -103,6 +149,7 @@ class WxCleanerApp:
         self.menu.add_command(label="保留此文件 (设为绿色)", command=self.unmark_item)
         self.menu.add_command(label="标记为删除 (设为红色)", command=self.mark_item)
         self.tree.bind("<Button-3>", self.show_menu)
+        self.tree.bind("<Button-2>", self.show_menu)
         
         # --- 底部操作栏 ---
         bottom_frame = ttk.Frame(main_frame, padding="10")
@@ -116,10 +163,10 @@ class WxCleanerApp:
         info_frame = ttk.Frame(bottom_frame)
         info_frame.pack(fill=X)
         
-        self.status_label = ttk.Label(info_frame, text="准备就绪", bootstyle="secondary", font=("Microsoft YaHei", 10))
+        self.status_label = ttk.Label(info_frame, text="准备就绪", bootstyle="secondary", font=self.ui_font_normal)
         self.status_label.pack(side=LEFT)
         
-        self.selection_label = ttk.Label(info_frame, text="", bootstyle="danger", font=("Microsoft YaHei", 10, "bold"))
+        self.selection_label = ttk.Label(info_frame, text="", bootstyle="danger", font=self.ui_font_bold)
         self.selection_label.pack(side=LEFT, padx=20)
         
         # 按钮
@@ -252,8 +299,7 @@ class WxCleanerApp:
         if not selected: return
         path = self.tree.item(selected[0])['values'][1]
         try:
-            folder = os.path.dirname(path)
-            os.startfile(folder)
+            open_file_location_in_system(path)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开文件夹: {e}")
 
@@ -281,6 +327,151 @@ class WxCleanerApp:
             self.tree.selection_add(items_to_select)
         self.on_tree_select(None)
 
-import subprocess
+    def delete_selected(self):
+        selected_items = self.tree.selection()
+        if not selected_items:
+            messagebox.showinfo("提示", "请先选择要清理的文件")
+            return
 
-# ... (Previous imports)
+        if not messagebox.askyesno("清理确认", f"确定要将选中的 {len(selected_items)} 个文件移至回收站吗？\n\n注意：这不会永久删除文件，您可以在回收站中找回。"):
+            return
+
+        progress_win = ttk.Toplevel(self.root, title="正在清理...", size=(400, 150))
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        try:
+            icon_file = resource_path("icon.ico")
+            if sys.platform.startswith("win") and os.path.exists(icon_file):
+                progress_win.iconbitmap(icon_file)
+        except Exception:
+            pass
+
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 200
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
+        progress_win.geometry(f"+{x}+{y}")
+
+        content = ttk.Frame(progress_win, padding=12)
+        content.pack(fill=BOTH, expand=YES)
+
+        ttk.Label(content, text="正在移动文件到回收站...", font=self.ui_font_normal).pack(pady=(0, 10))
+
+        p_bar = ttk.Progressbar(content, orient=HORIZONTAL, length=300, mode='determinate', bootstyle="danger-striped")
+        p_bar.pack(pady=10)
+        p_bar['maximum'] = len(selected_items)
+
+        status_var = tk.StringVar(value="准备中...")
+        ttk.Label(content, textvariable=status_var, font=self.ui_font_normal).pack(pady=5)
+
+        stop_flag = False
+
+        def stop_deletion():
+            nonlocal stop_flag
+            stop_flag = True
+            status_var.set("正在停止...")
+            btn_stop.configure(state="disabled")
+
+        btn_stop = ttk.Button(content, text="停止清理", command=stop_deletion, bootstyle="secondary")
+        btn_stop.pack(pady=5)
+
+        items_to_process = []
+        for item in selected_items:
+            raw_path = self.tree.item(item)['values'][1]
+            path = os.path.abspath(raw_path)
+            items_to_process.append((item, path))
+
+        success_count = 0
+        errors = []
+        processed_count = 0
+        ui_lock = threading.Lock()
+
+        def delete_task(item_data):
+            if stop_flag:
+                return None
+
+            item_id, file_path = item_data
+
+            # 清理只进入系统回收站，不直接永久删除微信文件。
+            try:
+                send2trash(file_path)
+                return (True, item_id, file_path, None)
+            except Exception as e:
+                return (False, item_id, file_path, str(e))
+
+        def run_batch_delete():
+            nonlocal success_count, processed_count
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(delete_task, item): item for item in items_to_process}
+
+                for future in concurrent.futures.as_completed(futures):
+                    if stop_flag:
+                        break
+
+                    try:
+                        result = future.result()
+                    except Exception:
+                        continue
+
+                    if result is None:
+                        continue
+
+                    success, item_id, fpath, err = result
+
+                    with ui_lock:
+                        processed_count += 1
+
+                        def update_ui(p=processed_count, t=len(items_to_process)):
+                            if not progress_win.winfo_exists():
+                                return
+                            p_bar['value'] = p
+                            status_var.set(f"已处理: {p} / {t}")
+
+                        self.root.after(0, update_ui)
+
+                        if success:
+                            success_count += 1
+                            self.root.after(0, lambda i=item_id: self.tree.delete(i))
+                        else:
+                            errors.append(f"{os.path.basename(fpath)}: {err}")
+
+            self.root.after(0, lambda: progress_win.destroy() if progress_win.winfo_exists() else None)
+            self.root.after(0, lambda: self.show_delete_report(success_count, errors, stop_flag))
+
+        threading.Thread(target=run_batch_delete, daemon=True).start()
+
+    def show_delete_report(self, success_count, errors, stopped):
+        if stopped:
+            messagebox.showwarning("已停止", f"清理已停止。\n成功移至回收站: {success_count} 个文件")
+        elif success_count > 0 and not errors:
+            messagebox.showinfo("清理完成", f"已成功将 {success_count} 个文件移动至系统回收站。")
+
+        if errors:
+            error_msg = "\n".join(errors[:5])
+            if len(errors) > 5:
+                error_msg += f"\n... 以及其他 {len(errors)-5} 个错误"
+            messagebox.showerror("部分失败", f"成功: {success_count} 个\n失败: {len(errors)} 个\n\n失败详情:\n{error_msg}")
+
+        self.selection_label.config(text="")
+
+    def sort_column(self, col, reverse):
+        rows = [(self.tree.set(k, col), k) for k in self.tree.get_children("")]
+        if col == "size":
+            def get_bytes(size_text):
+                try:
+                    parts = size_text.split()
+                    if len(parts) != 2:
+                        return 0
+                    multipliers = {'B': 1, 'KB': 1024, 'MB': 1024**2, 'GB': 1024**3, 'TB': 1024**4}
+                    return float(parts[0]) * multipliers.get(parts[1], 1)
+                except Exception:
+                    return 0
+            rows.sort(key=lambda x: get_bytes(x[0]), reverse=reverse)
+        elif col == "num":
+            rows.sort(key=lambda x: int(x[0]), reverse=reverse)
+        else:
+            rows.sort(reverse=reverse)
+
+        for index, (_, item) in enumerate(rows):
+            self.tree.move(item, "", index)
+        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))

@@ -8,10 +8,10 @@ import sys
 import time
 import hashlib
 import concurrent.futures
+import subprocess
 from collections import defaultdict
 from send2trash import send2trash
 # from PIL import Image, ImageTk # 移除未使用的引用
-from ctypes import windll
 
 # ==========================================
 # 辅助函数
@@ -22,6 +22,48 @@ def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
+
+
+def get_ui_fonts():
+    if sys.platform == "darwin":
+        return ("PingFang SC", 10), ("PingFang SC", 10, "bold")
+    if sys.platform.startswith("win"):
+        return ("Microsoft YaHei", 10), ("Microsoft YaHei", 10, "bold")
+    return ("Noto Sans CJK SC", 10), ("Noto Sans CJK SC", 10, "bold")
+
+
+def get_default_wechat_path():
+    home = os.path.expanduser("~")
+    candidates = []
+
+    if sys.platform == "darwin":
+        candidates = [
+            os.path.join(home, "Library", "Containers", "com.tencent.xinWeChat", "Data", "Documents"),
+            os.path.join(home, "Library", "Containers", "com.tencent.xinWeChat", "Data", "Library", "Application Support", "com.tencent.xinWeChat"),
+            os.path.join(home, "Library", "Application Support", "com.tencent.xinWeChat"),
+            os.path.join(home, "Documents", "WeChat Files"),
+        ]
+    elif sys.platform.startswith("win"):
+        candidates = [
+            os.path.join(home, "Documents", "WeChat Files"),
+            os.path.join(os.environ.get("USERPROFILE", home), "Documents", "WeChat Files"),
+        ]
+    else:
+        candidates = [os.path.join(home, "Documents", "WeChat Files")]
+
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return ""
+
+
+def open_file_location_in_system(path):
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-R", path], check=True)
+    elif sys.platform.startswith("win"):
+        subprocess.run(["explorer", f"/select,{os.path.normpath(path)}"], check=True)
+    else:
+        subprocess.run(["xdg-open", os.path.dirname(path)], check=True)
 
 # ==========================================
 # 核心扫描逻辑
@@ -120,14 +162,12 @@ class WxCleanerApp:
         self.root.title("微信重复文件清理工具")
         self.root.geometry("1100x800")
         
-        # 恢复默认字体设置
-        self.ui_font_normal = ("Microsoft YaHei", 10)
-        self.ui_font_bold = ("Microsoft YaHei", 10, "bold")
+        self.ui_font_normal, self.ui_font_bold = get_ui_fonts()
         
-        # 设置窗口图标
+        # Windows 使用 ico；macOS 打包时应通过应用包 icns 设置 Dock 图标。
         try:
             icon_file = resource_path("icon.ico")
-            if os.path.exists(icon_file):
+            if sys.platform.startswith("win") and os.path.exists(icon_file):
                 self.root.iconbitmap(icon_file)
         except Exception as e:
             print(f"图标加载失败: {e}")
@@ -139,7 +179,7 @@ class WxCleanerApp:
         style.configure("Treeview", font=self.ui_font_normal, rowheight=30)
         style.configure("Treeview.Heading", font=self.ui_font_bold)
         
-        self.scan_path = tk.StringVar()
+        self.scan_path = tk.StringVar(value=get_default_wechat_path())
         self.duplicates = {} 
         
         self.setup_ui()
@@ -197,6 +237,7 @@ class WxCleanerApp:
         self.menu.add_command(label="保留此文件 (设为绿色)", command=self.unmark_item)
         self.menu.add_command(label="标记为删除 (设为红色)", command=self.mark_item)
         self.tree.bind("<Button-3>", self.show_menu)
+        self.tree.bind("<Button-2>", self.show_menu)
         
         bottom_frame = ttk.Frame(main_frame, padding="10")
         bottom_frame.pack(fill=X, pady=(10, 0))
@@ -339,8 +380,7 @@ class WxCleanerApp:
         if not selected: return
         path = self.tree.item(selected[0])['values'][1]
         try:
-            folder = os.path.dirname(path)
-            os.startfile(folder)
+            open_file_location_in_system(path)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开文件夹: {e}")
 
@@ -378,16 +418,14 @@ class WxCleanerApp:
             return
         
         # 创建删除进度窗口
-        progress_win = tk.Toplevel(self.root)
-        progress_win.title("正在清理...")
-        progress_win.geometry("400x150")
+        progress_win = ttk.Toplevel(self.root, title="正在清理...", size=(400, 150))
         progress_win.transient(self.root)
         progress_win.grab_set()
         
         # 设置弹窗图标
         try:
             icon_file = resource_path("icon.ico")
-            if os.path.exists(icon_file):
+            if sys.platform.startswith("win") and os.path.exists(icon_file):
                 progress_win.iconbitmap(icon_file)
         except: pass
         
@@ -395,14 +433,17 @@ class WxCleanerApp:
         y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
         progress_win.geometry(f"+{x}+{y}")
 
-        ttk.Label(progress_win, text="正在移动文件到回收站...", font=self.ui_font_normal).pack(pady=10)
+        content = ttk.Frame(progress_win, padding=12)
+        content.pack(fill=BOTH, expand=YES)
+
+        ttk.Label(content, text="正在移动文件到回收站...", font=self.ui_font_normal).pack(pady=(0, 10))
         
-        p_bar = ttk.Progressbar(progress_win, orient=HORIZONTAL, length=300, mode='determinate', bootstyle="danger-striped")
+        p_bar = ttk.Progressbar(content, orient=HORIZONTAL, length=300, mode='determinate', bootstyle="danger-striped")
         p_bar.pack(pady=10)
         p_bar['maximum'] = len(selected_items)
         
         status_var = tk.StringVar(value="准备中...")
-        ttk.Label(progress_win, textvariable=status_var, font=self.ui_font_normal).pack(pady=5)
+        ttk.Label(content, textvariable=status_var, font=self.ui_font_normal).pack(pady=5)
         
         stop_flag = False
         def stop_deletion():
@@ -411,7 +452,7 @@ class WxCleanerApp:
             status_var.set("正在停止...")
             btn_stop.configure(state="disabled")
 
-        btn_stop = ttk.Button(progress_win, text="停止清理", command=stop_deletion, bootstyle="secondary")
+        btn_stop = ttk.Button(content, text="停止清理", command=stop_deletion, bootstyle="secondary")
         btn_stop.pack(pady=5)
 
         items_to_process = []
@@ -431,7 +472,7 @@ class WxCleanerApp:
             
             item_id, file_path = item_data
             
-            # 使用 send2trash
+            # 清理只进入系统回收站，不直接永久删除微信文件。
             try:
                 send2trash(file_path)
                 return (True, item_id, file_path, None)
